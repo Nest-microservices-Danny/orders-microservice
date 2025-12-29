@@ -2,97 +2,154 @@
   <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
 </p>
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+# Orders Microservice
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Microservice de ordenes construido con NestJS, Prisma y PostgreSQL. Expone
+operaciones via TCP usando `@MessagePattern` para crear, listar, obtener y
+actualizar el estado de ordenes.
 
-## Description
+## Stack
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+- NestJS (microservices + validation)
+- Prisma ORM (adapter pg)
+- PostgreSQL 16 (docker-compose)
 
-## Project setup
+## Configuracion
+
+1) Instalar dependencias:
 
 ```bash
-$ npm install
+npm install
 ```
 
-## Compile and run the project
+2) Levantar Postgres con Docker:
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+docker-compose up -d
 ```
 
-## Run tests
+3) Crear `.env` con las variables:
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+PORT=3000
+DATABASE_URL=postgresql://postgres:123456@localhost:5432/ordersdb
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+4) Aplicar esquema y generar cliente de Prisma:
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+npx prisma migrate dev
+npx prisma generate
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+5) Iniciar el microservicio:
 
-## Resources
+```bash
+npm run start:dev
+```
 
-Check out a few resources that may come in handy when working with NestJS:
+## Transporte y mensajes
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+El microservicio usa transporte TCP y escucha en `PORT` (ver `src/main.ts`).
+El payload se valida con `class-validator` y `ValidationPipe` en modo
+`whitelist` + `forbidNonWhitelisted`.
 
-## Support
+### MessagePattern disponibles
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+`createOrder`
 
-## Stay in touch
+```json
+{
+  "totalAmount": 150,
+  "totalItems": 3,
+  "status": "PENDING",
+  "paid": false
+}
+```
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+`findAllOrders`
 
-## License
+```json
+{
+  "page": 1,
+  "limit": 10,
+  "status": "CANCELLED"
+}
+```
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Respuesta:
+
+```json
+{
+  "data": [/* orders */],
+  "meta": {
+    "totalItems": 8,
+    "page": 1,
+    "lastPage": 1
+  }
+}
+```
+
+`findOneOrder`
+
+```json
+{
+  "id": "c9e43f2b-ee88-48ad-97cd-df8bbf7dccbf"
+}
+```
+
+`changeOrderStatus`
+
+```json
+{
+  "id": "c9e43f2b-ee88-48ad-97cd-df8bbf7dccbf",
+  "status": "DELIVERED"
+}
+```
+
+## Dominio de datos
+
+`Order` en Prisma (`prisma/schema.prisma`):
+
+- `id` UUID
+- `totalAmount` float
+- `totalItems` int
+- `status` enum `OrderStatus` (`PENDING`, `DELIVERED`, `CANCELLED`)
+- `paid` boolean (default false)
+- `paidAt` datetime nullable
+- `createdAt`/`updatedAt` timestamps
+
+## Estructura del proyecto
+
+```
+src/
+  app.module.ts
+  main.ts
+  common/
+    prisma.service.ts
+    dto/pagination.dto.ts
+    exception/rpc-custom-exceptions.filter.ts
+  orders/
+    orders.controller.ts
+    orders.service.ts
+    dto/
+    enum/
+prisma/
+  schema.prisma
+  migrations/
+```
+
+## Scripts utiles
+
+```bash
+npm run start
+npm run start:dev
+npm run build
+npm run test
+npm run test:e2e
+```
+
+## Notas
+
+- `RpcCustomExceptionFilter` existe pero no esta registrado globalmente.
+- El cliente de Prisma se genera en `generated/prisma`.
