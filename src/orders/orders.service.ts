@@ -1,18 +1,94 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { HttpStatus, Injectable } from '@nestjs/common';
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+
+import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/common/prisma.service';
-import { RpcException } from '@nestjs/microservices';
+import { ClientProxy, RpcException } from '@nestjs/microservices';
 import { OrderPaginationDto } from './dto/order-pagination.dto';
 import { ChangeOrderDto, CreateOrderDto } from './dto';
+import { PRODUCTS_SERVICE } from 'src/config';
+import { firstValueFrom } from 'rxjs';
 
 @Injectable()
 export class OrdersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Inject(PRODUCTS_SERVICE) private readonly productsClient: ClientProxy,
+  ) {}
   async create(createOrderDto: CreateOrderDto) {
-    return await this.prisma.order.create({
-      data: createOrderDto,
-    });
+    try {
+      // 1. confirmar los ids de los productos
+      const productIds = createOrderDto.items.map((item) => item.productId);
+      const products: any[] = await firstValueFrom(
+        this.productsClient.send(
+          {
+            cmd: 'validate_products',
+          },
+          productIds,
+        ),
+      );
+      //2 .calculados de los valores
+      const totalAmount = createOrderDto.items.reduce((acc, orderItem) => {
+        const price = products.find(
+          (product) => product.id === orderItem.productId,
+        ).price;
+        return acc + price * orderItem.quantity;
+      }, 0);
+      const totalItems = createOrderDto.items.reduce(
+        (acumulador, orderItem) => {
+          return acumulador + orderItem.quantity;
+        },
+        0,
+      );
+
+      // 3. transaccion de la base de datos
+      const order = await this.prisma.order.create({
+        data: {
+          totalAmount: totalAmount,
+          totalItems: totalItems,
+          OrderItem: {
+            createMany: {
+              data: createOrderDto.items.map((orderItem) => ({
+                quantity: orderItem.quantity,
+                productId: orderItem.productId,
+                price: products.find(
+                  (product) => product.id === orderItem.productId,
+                ).price,
+              })),
+            },
+          },
+        },
+        include: {
+          OrderItem: {
+            select: {
+              price: true,
+              quantity: true,
+              productId: true,
+            },
+          },
+        },
+      });
+      return {
+        ...order,
+        OrderItem: order.OrderItem.map((item) => ({
+          ...item,
+          name: products.find((product) => product.id === item.productId).name,
+        })),
+      };
+    } catch (error) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: `Check logs ${error}`,
+      });
+    }
+
+    // return {
+    //   service: 'Create order SERVICE',
+    //   createOrderDTO: createOrderDto.items.map((data) => data.productId),
+    // };
+    // return await this.prisma.order.create({
+    //   data: createOrderDto,
+    // });
   }
 
   async findAll(orderPagination: OrderPaginationDto) {
