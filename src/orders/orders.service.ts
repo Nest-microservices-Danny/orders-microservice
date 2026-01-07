@@ -120,6 +120,15 @@ export class OrdersService {
       where: {
         id,
       },
+      include: {
+        OrderItem: {
+          select: {
+            price: true,
+            quantity: true,
+            productId: true,
+          },
+        },
+      },
     });
     if (!order) {
       throw new RpcException({
@@ -127,7 +136,23 @@ export class OrdersService {
         message: `Order with id ${id} not found`,
       });
     }
-    return order;
+
+    const productIds = order.OrderItem.map((item) => item.productId);
+    const products: any[] = await firstValueFrom(
+      this.productsClient.send(
+        {
+          cmd: 'validate_products',
+        },
+        productIds,
+      ),
+    );
+    return {
+      ...order,
+      OrderItem: order.OrderItem.map((item) => ({
+        ...item,
+        name: products.find((product) => product.id === item.productId).name,
+      })),
+    };
   }
 
   async changeOrderStatus(changeOrderDto: ChangeOrderDto) {
@@ -139,7 +164,7 @@ export class OrdersService {
       }
       return await this.prisma.order.update({
         where: { id },
-        data: { ...order, status },
+        data: { status },
       });
     } catch (error) {
       throw new RpcException({
