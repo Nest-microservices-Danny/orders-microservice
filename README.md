@@ -4,152 +4,163 @@
 
 # Orders Microservice
 
-Microservice de ordenes construido con NestJS, Prisma y PostgreSQL. Expone
-operaciones via TCP usando `@MessagePattern` para crear, listar, obtener y
-actualizar el estado de ordenes.
+Microservicio de gestión de órdenes construido con NestJS y NATS para comunicación con otros microservicios.
 
-## Stack
+## Características
 
-- NestJS (microservices + validation)
-- Prisma ORM (adapter pg)
-- PostgreSQL 16 (docker-compose)
+- Gestión de órdenes (crear, listar, actualizar estado)
+- Comunicación con microservicio de productos vía NATS
+- Validación de productos antes de crear órdenes
+- Cálculo automático de totales
+- Persistencia con Prisma + PostgreSQL
 
-## Configuracion
+## Requisitos
 
-1) Instalar dependencias:
+- Node.js v22.18.0+
+- PostgreSQL
+- NATS Server (local o remoto)
+
+## Variables de Entorno
+
+Crea un archivo `.env` en la raíz del proyecto:
+
+```env
+# Puerto del microservicio (opcional, no se usa en modo microservicio puro)
+PORT=3002
+
+# Base de datos PostgreSQL
+DATABASE_URL="postgresql://postgres:123456@localhost:5432/ordersdb?schema=public"
+
+# Servidor(es) NATS - REQUERIDO
+# Para un servidor: nats://localhost:4222
+# Para varios: nats://host1:4222,nats://host2:4222
+NATS_SERVERS="nats://127.0.0.1:4222"
+```
+
+## Instalación
 
 ```bash
+# Instalar dependencias
 npm install
-```
 
-2) Levantar Postgres con Docker:
-
-```bash
-docker-compose up -d
-```
-
-3) Crear `.env` con las variables:
-
-```bash
-PORT=3000
-DATABASE_URL=postgresql://postgres:123456@localhost:5432/ordersdb
-```
-
-4) Aplicar esquema y generar cliente de Prisma:
-
-```bash
-npx prisma migrate dev
+# Configurar base de datos
 npx prisma generate
+npx prisma migrate dev
 ```
 
-5) Iniciar el microservicio:
+## Ejecutar NATS Server
+
+### Opción 1: Docker (recomendado)
+```bash
+docker run -d --name nats-server -p 4222:4222 nats:latest
+```
+
+### Opción 2: Local
+```bash
+# Instalar NATS
+brew install nats-server  # macOS
+
+# Ejecutar
+nats-server
+```
+
+## Ejecución
 
 ```bash
+# Desarrollo
 npm run start:dev
-```
 
-## Transporte y mensajes
-
-El microservicio usa transporte TCP y escucha en `PORT` (ver `src/main.ts`).
-El payload se valida con `class-validator` y `ValidationPipe` en modo
-`whitelist` + `forbidNonWhitelisted`.
-
-### MessagePattern disponibles
-
-`createOrder`
-
-```json
-{
-  "totalAmount": 150,
-  "totalItems": 3,
-  "status": "PENDING",
-  "paid": false
-}
-```
-
-`findAllOrders`
-
-```json
-{
-  "page": 1,
-  "limit": 10,
-  "status": "CANCELLED"
-}
-```
-
-Respuesta:
-
-```json
-{
-  "data": [/* orders */],
-  "meta": {
-    "totalItems": 8,
-    "page": 1,
-    "lastPage": 1
-  }
-}
-```
-
-`findOneOrder`
-
-```json
-{
-  "id": "c9e43f2b-ee88-48ad-97cd-df8bbf7dccbf"
-}
-```
-
-`changeOrderStatus`
-
-```json
-{
-  "id": "c9e43f2b-ee88-48ad-97cd-df8bbf7dccbf",
-  "status": "DELIVERED"
-}
-```
-
-## Dominio de datos
-
-`Order` en Prisma (`prisma/schema.prisma`):
-
-- `id` UUID
-- `totalAmount` float
-- `totalItems` int
-- `status` enum `OrderStatus` (`PENDING`, `DELIVERED`, `CANCELLED`)
-- `paid` boolean (default false)
-- `paidAt` datetime nullable
-- `createdAt`/`updatedAt` timestamps
-
-## Estructura del proyecto
-
-```
-src/
-  app.module.ts
-  main.ts
-  common/
-    prisma.service.ts
-    dto/pagination.dto.ts
-    exception/rpc-custom-exceptions.filter.ts
-  orders/
-    orders.controller.ts
-    orders.service.ts
-    dto/
-    enum/
-prisma/
-  schema.prisma
-  migrations/
-```
-
-## Scripts utiles
-
-```bash
-npm run start
-npm run start:dev
+# Producción
 npm run build
-npm run test
-npm run test:e2e
+npm run start:prod
 ```
 
-## Notas
+## Arquitectura
 
-- `RpcCustomExceptionFilter` existe pero no esta registrado globalmente.
-- El cliente de Prisma se genera en `generated/prisma`.
+### Transporte
+- **NATS**: Sistema de mensajería para comunicación entre microservicios
+- **Token de inyección**: `NATS_SERVICES` para acceder al ClientProxy
+
+### Endpoints (Patrones NATS)
+
+```typescript
+// Crear orden
+{ cmd: 'create_order' }
+
+// Listar órdenes
+{ cmd: 'find_all_orders' }
+
+// Obtener orden por ID
+{ cmd: 'find_one_order' }
+
+// Cambiar estado de orden
+{ cmd: 'change_order_status' }
+```
+
+### Comunicación con Products MS
+
+El servicio se comunica con el microservicio de productos mediante:
+
+```typescript
+// Validar productos
+this.client.send({ cmd: 'validate_products' }, productIds)
+```
+
+## Estructura de Datos
+
+### Order
+```typescript
+{
+  id: string;
+  totalAmount: number;
+  totalItems: number;
+  status: OrderStatus;
+  paid: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  OrderItem: OrderItem[];
+}
+```
+
+### OrderItem
+```typescript
+{
+  productId: number;
+  quantity: number;
+  price: number;
+  name: string; // Agregado desde Products MS
+}
+```
+
+## Solución de Problemas
+
+### Error: "NATS_SERVERS" is required
+- Asegúrate de tener la variable `NATS_SERVERS` en tu `.env`
+- Verifica que el archivo `.env` esté en la raíz del proyecto
+
+### Error de conexión NATS
+- Verifica que NATS Server esté corriendo: `docker ps` o `ps aux | grep nats`
+- Confirma que el puerto 4222 esté disponible
+- Revisa la URL en `NATS_SERVERS` (debe incluir el protocolo `nats://`)
+
+### Products MS no responde
+- Asegúrate de que el microservicio de productos esté corriendo
+- Verifica que ambos servicios usen la misma configuración de NATS_SERVERS
+- Confirma que los patrones de mensaje coincidan entre servicios
+
+## Scripts Disponibles
+
+```bash
+npm run start          # Ejecutar en modo producción
+npm run start:dev      # Ejecutar en modo desarrollo
+npm run build          # Compilar el proyecto
+npm run lint           # Ejecutar linter
+npm run test           # Ejecutar tests
+```
+
+## Notas Técnicas
+
+- El token `NATS_SERVICES` es interno de cada aplicación NestJS
+- `NATS_SERVERS` debe apuntar al mismo broker en todos los microservicios
+- Los patrones de mensaje (cmd) deben estar sincronizados entre servicios
+- Las transacciones de base de datos garantizan consistencia en creación de órdenes
